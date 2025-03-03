@@ -21,7 +21,8 @@
   uint
   {name: (string-ascii 32),
    reward-xp: uint,
-   required-level: uint}
+   required-level: uint,
+   location: uint}
 )
 
 ;; Constants
@@ -29,6 +30,8 @@
 (define-constant err-player-not-found (err u101))
 (define-constant err-invalid-level (err u102))
 (define-constant err-quest-not-found (err u103))
+(define-constant err-wrong-location (err u104))
+(define-constant exp-per-level u100)
 
 ;; Public functions
 (define-public (create-player (name (string-ascii 32)) (health uint) (attack uint) (defense uint))
@@ -57,6 +60,15 @@
   )
 )
 
+(define-public (add-quest (quest-id uint) (quest-name (string-ascii 32)) (reward uint) (req-level uint) (quest-location uint))
+  (ok (map-set quests quest-id {
+    name: quest-name,
+    reward-xp: reward,
+    required-level: req-level,
+    location: quest-location
+  }))
+)
+
 (define-public (start-quest (quest-id uint))
   (let (
     (player (map-get? players tx-sender))
@@ -64,9 +76,18 @@
   )
     (match quest
       quest-data (
-        if (>= (get level (default-to {level: u0} player)) (get required-level quest-data))
-          (ok (add-experience tx-sender (get reward-xp quest-data)))
-          err-invalid-level
+        (match player
+          player-data (
+            (if (and 
+              (>= (get level player-data) (get required-level quest-data))
+              (is-eq (get current-location player-data) (get location quest-data))
+            )
+              (ok (add-experience tx-sender (get reward-xp quest-data)))
+              err-wrong-location
+            )
+          )
+          err-player-not-found
+        )
       )
       err-quest-not-found
     )
@@ -82,8 +103,14 @@
   (let ((player (map-get? players player-id)))
     (match player
       player-data (
-        let ((new-xp (+ (get experience player-data) xp-amount)))
-          (map-set players player-id (merge player-data {experience: new-xp}))
+        let (
+          (new-xp (+ (get experience player-data) xp-amount))
+          (new-level (+ (get level player-data) (/ new-xp exp-per-level)))
+        )
+          (map-set players player-id (merge player-data {
+            experience: new-xp,
+            level: new-level
+          }))
           (ok true)
       )
       err-player-not-found
